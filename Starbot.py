@@ -1,13 +1,12 @@
 from discord.ext import commands
 from pymongo import MongoClient
-from StarbotUtils import get_yaml
 import logging
+import yaml
 
-settings_file = open("settings.yml", "r")
-discord_token = get_yaml(settings_file, "discord_bot_token")
-mongo_user = get_yaml(settings_file, "mongo_username")
-mongo_pass = get_yaml(settings_file, "mongo_password")
-mongo_db = get_yaml(settings_file, "mongod_db")
+settings = yaml.load(open("settings.yml", "r"))
+discord_token = settings.get("discord_bot_token")
+mongo_user, mongo_pass, mongo_db = \
+    settings.get("mongo_username"), settings.get("mongo_password"), settings.get("mongo_db")
 
 print('settings.yml has loaded.')
 
@@ -19,6 +18,7 @@ logger.addHandler(handler)
 
 client = MongoClient('mongodb+srv://' + mongo_user + ":" + mongo_pass + "@cluster0.n0rcn.mongodb.net/"
                      + mongo_db + '?retryWrites=true&w=majority')
+db = client.test
 
 bot = commands.Bot(command_prefix='%')
 
@@ -34,3 +34,4 @@ async def ping(ctx):
 
 
 bot.run(discord_token)
+

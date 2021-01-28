@@ -1,13 +1,12 @@
 from discord.ext import commands
-from disputils import BotMultipleChoice
-
+from database import Database
 import settings
 
 desc = """
     A somewhat weird bot used all kinds of things.
 """
 
-db = settings.get_database()
+db = Database()
 discord_token = settings.get_token()
 
 class Bot(commands.Bot):
@@ -30,15 +29,13 @@ async def on_disconnect():
 
 @bot.command(name="ping")
 async def ping(ctx):
-    await ctx.send('pong')
+    await ctx.send(':ping_pong: Pong!')
 
-@bot.command(name="choice")
-async def choice(ctx):
-    multiple_choice = BotMultipleChoice(ctx, ["Create a new starboard", "Modify a starboard", "Delete a starboard"], "Testing stuff")
-    await multiple_choice.run()
+extensions = [
+    "cogs.starboard"
+]
 
-    await multiple_choice.quit(multiple_choice.choice)
-
-
+for ext in extensions:
+    bot.load_extension(ext)
 
 bot.run(discord_token)

@@ -1,4 +1,3 @@
-from pymongo import MongoClient
 import yaml
 import logging
 
@@ -13,3 +12,6 @@ logger.addHandler(handler)
 
 def get_token():
     return settings.get("discord_bot_token")
+
+def get_credentials():
+    return [settings.get("mongo_username"), settings.get("mongo_password"), settings.get("mongo_db")]

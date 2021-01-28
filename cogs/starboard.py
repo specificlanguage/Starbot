@@ -1,5 +1,4 @@
 from discord.ext import commands
-import discord
 import CivBot
 
 class Starboard(commands.Cog, name="Starboard"):
@@ -8,36 +7,41 @@ class Starboard(commands.Cog, name="Starboard"):
 
     @commands.Cog.listener()
     async def on_reaction_add(self, message):
-        pass
+        return
 
-    @commands.command(name="starboard")
+    @commands.command(name="starboard", help="Manages starboards:\n" +
+            "!starboard create [name] [reaction] {threshold}\n" +
+            "!starboard modify [name] [threshold] [value]\n" +
+            "!starboard remove [name]",
+        brief="Manages starboards")
     async def starboard(self, ctx, *args):
-        try:
-            if args[0] == "create":
-                if len(args) == 1:
-                    await ctx.send("Usage: !starboard create [emoji])")
-                guild = ctx.guild.id
-                channel = ctx.channel.id
-                reaction = args[1]
-                try:
-                    threshold = args[2]
-                except IndexError:
-                    threshold = 3
-                CivBot.db.database.channels.insert_one({
-                    'guild': guild,
-                    'channel': channel,
-                    'reaction': reaction,
-                    'threshold': threshold
-                })
-                await ctx.send("Starboard created in this channel, with " + reaction +
-                               " as reaction and threshold " + str(threshold))
-                return
-            elif args[0] == "modify":
-                pass
-            elif args[0] == "remove":
-                pass
-        except IndexError:
-            ctx.send("Usage: !starboard [create/modify/remove] [args]")
+        # create subcommand
+        if len(args) >= 3 and args[0] == 'create':
+            guild = ctx.guild.id
+            channel = ctx.channel.id
+            name = args[1]
+            reaction = args[2]
+            try:
+                threshold = args[3]
+            except IndexError:
+                threshold = 3
+            # TODO: check for duplicates
+            CivBot.db.database.channels.insert_one({
+                'name': name,
+                'guild': guild,
+                'channel': channel,
+                'reaction': reaction,
+                'threshold': threshold
+            })
+            await ctx.send("Starboard '" + name + "' created in this channel, with " + reaction +
+                           " as reaction and threshold " + str(threshold))
+            return
+        # modify subcommand
+        elif len(args) >= 4 and args[0] == 'modify':
+            # modify an entry
+            return
+        else:
+            await ctx.send()
 
 def setup(bot):
     bot.add_cog(Starboard(bot))

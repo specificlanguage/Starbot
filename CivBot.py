@@ -15,7 +15,7 @@ class Bot(commands.Bot):
         self.db = db
 
 
-bot = Bot(db=db, description=desc, command_prefix="!", help_command=None)
+bot = Bot(db=db, description=desc, command_prefix="!")
 # help command None is temporary right now
 # we'll change prefix once everything becomes all set
 
@@ -26,6 +26,13 @@ async def on_ready():
 @bot.event
 async def on_disconnect():
     print('Bot was disconnected!')
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.UserInputError):
+        await ctx.send("Invalid input.")
+    else:
+        raise error
 
 @bot.command(name="ping")
 async def ping(ctx):

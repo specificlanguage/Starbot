@@ -1,4 +1,6 @@
 from discord.ext import commands
+from disputils import BotMultipleChoice
+
 import settings
 
 desc = """
@@ -29,5 +31,14 @@ async def on_disconnect():
 @bot.command(name="ping")
 async def ping(ctx):
     await ctx.send('pong')
+
+@bot.command(name="choice")
+async def choice(ctx):
+    multiple_choice = BotMultipleChoice(ctx, ["Create a new starboard", "Modify a starboard", "Delete a starboard"], "Testing stuff")
+    await multiple_choice.run()
+
+    await multiple_choice.quit(multiple_choice.choice)
+
+
 
 bot.run(discord_token)

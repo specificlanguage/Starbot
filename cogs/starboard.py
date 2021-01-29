@@ -28,7 +28,7 @@ class Starboard(commands.Cog, name="Starboard"):
         guild = ctx.guild.id
         channel = ctx.channel.id
         try:
-            threshold = args[0]
+            threshold = int(args[0])
         except IndexError:
             threshold = 3
         new_channel = {'name': name, 'guild': guild, 'channel': channel,
@@ -70,9 +70,24 @@ class Starboard(commands.Cog, name="Starboard"):
         elif value == "" or value is None:
             await ctx.send("Incorrect values! Threshold requires a number, antistar requires a reaction.")
             return
+        elif option == 'antistar' and database.channels.find({"guild": ctx.guild.id, "reaction": value})\
+                or database.channels.find({"guild": ctx.guild.id, "antistar": value}):
+            await ctx.send("You're already using that emoji in this discord!")
+            return
+        elif option == 'threshold' and int(value) <= 0:
+            await ctx.send("You can't set a threshold that's equal to or less than 0.")
+            return
+        elif option == 'antistar' and value == "clear":
+            database.channels.find_and_modify(query=search, update={"$set":{option, ""}}, upsert=False)
+            clear_antistars()
+            await ctx.send("Starboard antistars cleared.")
         else:
             database.channels.find_and_modify(query=search, update={"$set":{option, value}}, upsert=False)
-            await ctx.send("Starboard " + name + " updated.")sub
+            await ctx.send("Starboard " + name + " updated.")
+
+def clear_antistars():
+    pass
+    # TODO, probably not too hard, because it really just means disregard the anti-star entries
 
 def setup(bot):
     bot.add_cog(Starboard(bot))

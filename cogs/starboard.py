@@ -3,6 +3,8 @@ import CivBot
 
 database = CivBot.db.database
 
+# TODO: generally figure out custom emoji and how to treat them
+
 class Starboard(commands.Cog, name="Starboard"):
     def __init__(self, bot):
         self.bot = bot
@@ -17,33 +19,29 @@ class Starboard(commands.Cog, name="Starboard"):
             "!starboard modify [name] [threshold] [value]\n" +
             "!starboard remove [name]",
         brief="Manages starboards")
-    async def starboard(self, ctx, *args):
-        if ctx.invoked_summond is None:
+    async def starboard(self, ctx):
+        if ctx.invoked_subcommand is None:
             await ctx.send("Incorrect subcommand! Try !help starboard for more info.")
 
     # create() = is a subcommand for starboard settings.
     # creates a new channel
     @starboard.command(help="Creates a new starboard.\nRequires a name, reaction, and threshold amt.")
-    async def create(self, ctx, name: str, reaction: str, args):
+    async def create(self, ctx, name: str, reaction: str, threshold: int):
         guild = ctx.guild.id
         channel = ctx.channel.id
-        try:
-            threshold = int(args[0])
-        except IndexError:
-            threshold = 3
+        threshold = threshold
         new_channel = {'name': name, 'guild': guild, 'channel': channel,
                        'reaction': reaction, 'threshold': threshold, 'anti_star': ""}
-        results = database.channels.find({"guild": guild})
-        if results.count_documents() >= 2:
+        if database.channels.count_documents({"guild": guild}) >= 2:
             await ctx.send("Reached limit (2) of starboards! Can't create another one!")
             return
-        elif database.channels.find({"guild": guild, "reaction": reaction}).count_documents >= 1:
+        elif database.channels.count_documents({"guild": guild, "reaction": reaction}) >= 1:
             await ctx.send("You're already using that reaction in this discord.")
             return
-        elif database.channels.find({"channel": channel}).count_documents >= 1:
-            await ctx.send("This channel is already being used for a starboard. Try something else.")
+        elif database.channels.count_documents({"channel": channel}) >= 1: # we could delete this tbh
+            await ctx.send("This channel is already being used for a starboard. Try another channel.")
             return
-        elif database.channels.find({"guild": guild, "name": name}).count_documents >= 1:
+        elif database.channels.count_documents({"guild": guild, "name": name}) >= 1:
             await ctx.send("You've already made a starboard with that name.")
             return
         database.create_collection(name)
@@ -59,31 +57,34 @@ class Starboard(commands.Cog, name="Starboard"):
                             " or `!starboard modify antistar clear` to clear")
     async def modify(self, ctx, name: str, option: str, value: str):
         search = {"guild": ctx.guild.id, "name": name}
-        results = database.channels.find(search)
-        if results.count_documents == 0:
+        valid_options = ["threshold", "antistar"]
+        if database.channels.count_documents(search) == 0:
             await ctx.send("You don't have a starboard with this name.")
             return
-        valid_options = ["threshold", "antistar"]
         if option not in valid_options:
             await ctx.send("Not a valid option! Valid options: " + str(valid_options))
             return
         elif value == "" or value is None:
             await ctx.send("Incorrect values! Threshold requires a number, antistar requires a reaction.")
             return
-        elif option == 'antistar' and database.channels.find({"guild": ctx.guild.id, "reaction": value})\
-                or database.channels.find({"guild": ctx.guild.id, "antistar": value}):
+        elif option == 'antistar' and (database.channels.count_documents({"guild": ctx.guild.id, "reaction": value})
+                or database.channels.count_documents({"guild": ctx.guild.id, "antistar": value})):
             await ctx.send("You're already using that emoji in this discord!")
             return
         elif option == 'threshold' and int(value) <= 0:
             await ctx.send("You can't set a threshold that's equal to or less than 0.")
             return
-        elif option == 'antistar' and value == "clear":
-            database.channels.find_and_modify(query=search, update={"$set":{option, ""}}, upsert=False)
+        if value == "clear":
+            value_to_assign = ""
             clear_antistars()
-            await ctx.send("Starboard antistars cleared.")
+            await ctx.send("Starboard " + name + "'s antistars cleared.")
+        elif option == "threshold":
+            value_to_assign = int(value)
+            await ctx.send("Starboard " + name + "'s threshold settings set to " + value + ".")
         else:
-            database.channels.find_and_modify(query=search, update={"$set":{option, value}}, upsert=False)
-            await ctx.send("Starboard " + name + " updated.")
+            value_to_assign = value
+            await ctx.send("Starboard " + name + "'s anti-star reaction set to " + value + ".")
+        database.channels.find_and_modify(query=search, update={"$set":{option: value_to_assign}}, upsert=False)
 
 def clear_antistars():
     pass

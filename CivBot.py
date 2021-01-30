@@ -1,21 +1,23 @@
 from discord.ext import commands
 from database import Database
 import settings
+import discord
 
 desc = """
     A somewhat weird bot used all kinds of things.
 """
 
+intents = discord.Intents.default()
 db = Database()
 discord_token = settings.get_token()
 
 class Bot(commands.Bot):
     def __init__(self, db, command_prefix, *args, **kwargs):
         super().__init__(command_prefix, *args, **kwargs)
-        self.db = db
+        self.db = db.database
 
 
-bot = Bot(db=db, description=desc, command_prefix="!")
+bot = Bot(db=db, description=desc, command_prefix="!", intents=intents)
 # help command None is temporary right now
 # we'll change prefix once everything becomes all set
 

@@ -1,5 +1,6 @@
 import yaml
 import logging
+import discord
 
 settings = yaml.load(open("settings.yml", "r"), Loader=yaml.FullLoader)
 
@@ -15,3 +16,16 @@ def get_token():
 
 def get_credentials():
     return [settings.get("mongo_username"), settings.get("mongo_password"), settings.get("mongo_db")]
+
+def create_embed(message):
+    if len(message.attachment) == 0:
+        image = None
+    else:
+        image = message.attachments[0]
+    embed = discord.Embed(
+        author=message.author.name,
+        description=message.content,
+        image=image.url,
+        footer=message.created_at.strftime("%d %B %Y, %H %M %S"))
+    embed.add_field(name="Original message:", value="[Click to jump!]("+ message.jump_url + ")", inline=False)
+    return embed

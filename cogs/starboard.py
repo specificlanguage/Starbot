@@ -1,7 +1,6 @@
 from discord.ext import commands
-import CivBot
-
-# TODO: generally figure out custom emoji and how to treat them
+from pymongo import ReturnDocument
+import helpers
 
 class Starboard(commands.Cog, name="Starboard"):
     def __init__(self, bot):
@@ -15,10 +14,8 @@ class Starboard(commands.Cog, name="Starboard"):
         user = payload.member
         if user == message.author:
             return # reactions made by users do not count.
-
         valid_reactions = list(self.bot.db.channels.find({"guild": channel.guild.id, "or":
             {"reaction": emoji, "antistar": emoji}}))
-
         if len(valid_reactions) == 0:
             return  # no need to do anything here.
         board_name = valid_reactions[0]["name"]
@@ -27,15 +24,11 @@ class Starboard(commands.Cog, name="Starboard"):
         elif valid_reactions[0]["antistar"] == emoji:
             antistar = True
         coll = self.bot.db[board_name]
-        coll.insert_one({
-            "reactor": user.name,
-            "message": message.id,
-            "message_author": message.author,
-            "reaction": emoji,
-            "antistar": False
+        coll.insert_one({"reactor": user.name, "message": message.id,"message_author": message.author,
+            "reaction": emoji, "antistar": False
         })
 
-        update_starboard(message)
+        await self.update_starboard(message, board_name)
 
     # TODO: literally the opposite
 
@@ -60,6 +53,9 @@ class Starboard(commands.Cog, name="Starboard"):
                        'reaction': reaction, 'threshold': threshold, 'anti_star': ""}
         if self.bot.db.channels.count_documents({"guild": guild}) >= 2:
             await ctx.send("Reached limit (2) of starboards! Can't create another one!")
+            return
+        elif threshold <= 0:
+            await ctx.send("You can't set a threshold that's equal to or less than 0.")
             return
         elif self.bot.db.channels.count_documents({"guild": guild, "reaction": reaction}) >= 1:
             await ctx.send("You're already using that reaction in this discord.")
@@ -110,22 +106,49 @@ class Starboard(commands.Cog, name="Starboard"):
         else:
             value_to_assign = value
             await ctx.send("Starboard " + name + "'s anti-star reaction set to " + value + ".")
-        self.bot.db.channels.find_and_modify(query=search, update={"$set":{option: value_to_assign}}, upsert=False)
+        self.bot.db.channels.find_one_and_update(query=search, update={"$set": {option: value_to_assign}}, upsert=False)
 
-def add_star(channel_entry, message, antistar):
-    pass
-    # Antistar must be passed as a boolean
 
-def recount_reactions(reaction):
-    pass
+    async def update_starboard(self, message, board_name, change):
+        if change != 1 or change != -1: # makes it easy to know what the change is
+            return
+
+        # if already added and there's a message, skip the full posting system
+        board = self.bot.db.channels.find({"guild": message.guild.id, "name": board_name})
+        star_message = self.bot.db.star_messages.find_one_and_update(
+            {"board_name": board_name, "star_message": message.id}, {"$inc": {'stars': change}},
+            return_document=ReturnDocument.BEFORE, upsert=False)
+        print(star_message["message"])
+        if star_message is not None:
+            sb_message = await self.bot.fetch_message(star_message["starboard_message"])
+            if star_message[0]["stars"] < board[0]["threshold"]: # removing message: lost threshold
+                await sb_message.delete()
+            await sb_message.edit(content=str(int(star_message["stars"]) + change))
+            # note: getting from star message here will get the ReturnDocument prior to the change.
+            return
+
+        # not added into database yet: adding message
+        coll = self.bot.db[board_name]
+        reaction_entry = coll.find_one(query={"message": message.id})
+        stars = coll.count_documents(query={"message": message.id, "antistars": False})
+        antistars = coll.count_documents(query={"message": message.id, "antistars": True})
+
+        if stars + antistars >= board[0]["threshold"] and len(list(star_message)) == 0:
+            star_channel = await self.bot.getchannel(board[0]["channel"])
+            sb_message = await star_channel.send(content=str(stars+antistars) + reaction_entry["reaction"],
+                                                 embed=helpers.create_embed(stars+antistars, message, ))
+            self.bot.db.star_messages.insert_one({
+                "board_name": board_name,
+                "star_message": sb_message.id,
+                "stars": stars+antistars,
+
+            })
+
+
 
 def clear_antistars():
     pass
     # TODO, probably not too hard, because it really just means dump the anti-star entries
-
-def update_starboard(message_id):
-    # TODO, check how many positive reactions and negative reactions, and then go to starboard
-    pass
 
 def setup(bot):
     bot.add_cog(Starboard(bot))

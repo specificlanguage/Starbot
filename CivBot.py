@@ -1,6 +1,6 @@
 from discord.ext import commands
 from database import Database
-import settings
+import helpers
 import discord
 
 desc = """
@@ -9,7 +9,7 @@ desc = """
 
 intents = discord.Intents.default()
 db = Database()
-discord_token = settings.get_token()
+discord_token = helpers.get_token()
 
 class Bot(commands.Bot):
     def __init__(self, db, command_prefix, *args, **kwargs):

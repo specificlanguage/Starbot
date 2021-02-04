@@ -8,6 +8,7 @@ desc = """
 """
 
 intents = discord.Intents.default()
+intents.members = True
 db = Database()
 discord_token = helpers.get_token()
 
@@ -34,6 +35,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.UserInputError):
         await ctx.send("Invalid input.")
     else:
+        await ctx.send("Something wrong happened. Check the console.")
         raise error
 
 @bot.command(name="ping")

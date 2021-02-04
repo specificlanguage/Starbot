@@ -31,7 +31,7 @@ class Starboard(commands.Cog, name="Starboard"):
         coll.insert_one({"reactor": user.name, "message": message.id,"message_author": message.author.name,
             "reaction": emoji, "antistar": antistar})
 
-        await self.update_starboard(message, board_name, change)
+        await self.update_starboard(message, board_name)
 
     # TODO: literally the opposite
 
@@ -115,32 +115,15 @@ class Starboard(commands.Cog, name="Starboard"):
 
     # TODO: starboard list/remove subcommand to list starboards
 
-    async def update_starboard(self, message, board_name, change):
-        if change != 1 or change != -1: # makes it easy to know what the change is
-            return
-        print("updating starboard...")
-        # if already added and there's a message, skip the full posting system
-        board = self.bot.db.channels.find_one({"guild": message.guild.id, "name": board_name})
-        star_message = self.bot.db.star_messages.find_one_and_update(
-            {"board_name": board_name, "star_message": message.id}, {"$inc": {'stars': change}},
-            return_document=ReturnDocument.BEFORE, upsert=False)
-        if star_message is not None:
-            sb_message = await self.bot.fetch_message(star_message[0]["star_message"])
-            if star_message[0]["stars"] < board[0]["threshold"]: # removing message: lost threshold
-                await sb_message.delete()
-            await sb_message.edit(content=str(int(star_message[0]["stars"]) + change))
-            # note: getting from star message here will get the ReturnDocument prior to the change.
-            return
-
-        # not added into database yet: adding message
+    async def update_starboard(self, message, board_name):
         coll = self.bot.db[board_name]
-        reaction_entry = coll.find_one(query={"message": message.id})
-        stars = coll.count_documents(query={"message": message.id, "antistars": False})
-        antistars = coll.count_documents(query={"message": message.id, "antistars": True})
-
-        if stars + antistars >= board[0]["threshold"] and len(list(star_message)) == 0:
-            star_channel = await self.bot.getchannel(board[0]["channel"])
-            sb_message = await star_channel.send(content=str(stars+antistars) + reaction_entry["reaction"],
+        reaction_entry = coll.find_one({"message": message.id})
+        stars = coll.count_documents({"message": message.id, "antistar": False})
+        antistars = coll.count_documents({"message": message.id, "antistar": True})
+        board = self.bot.db.channels.find_one({"guild": message.guild.id, "name": board_name})
+        if stars - antistars >= board["threshold"]:
+            star_channel = self.bot.get_channel(board["channel"])
+            sb_message = await star_channel.send(content=str(int(stars-antistars)) + reaction_entry["reaction"],
                                                  embed=helpers.create_embed(message))
             self.bot.db.star_messages.insert_one({
                 "board_name": board_name,
@@ -148,6 +131,7 @@ class Starboard(commands.Cog, name="Starboard"):
                 "star_message": sb_message.id,
                 "stars": stars+antistars,
             })
+
 
 
 

@@ -10,25 +10,28 @@ class Starboard(commands.Cog, name="Starboard"):
     async def on_raw_reaction_add(self, payload):
         channel = self.bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        emoji = str(payload.emoji)
+        emoji = str(payload.emoji)  # this is due to mongodb's limitations. Probably have to fix this.
         user = payload.member
         if user == message.author:
             return # reactions made by users do not count.
-        valid_reactions = list(self.bot.db.channels.find({"guild": channel.guild.id, "or":
-            {"reaction": emoji, "antistar": emoji}}))
-        if len(valid_reactions) == 0:
+        valid_reactions = self.bot.db.channels.find_one({"guild": channel.guild.id, "$or": [
+            {"reaction": emoji}, {"antistar": emoji}]})
+        if valid_reactions is None:
             return  # no need to do anything here.
-        board_name = valid_reactions[0]["name"]
-        if valid_reactions[0]["reaction"] == emoji:
-            antistar = False
-        elif valid_reactions[0]["antistar"] == emoji:
-            antistar = True
+        board_name = valid_reactions["name"]
+        antistar = False
+        change = 1
+        try:
+            if valid_reactions["antistar"] == emoji:
+                antistar = True
+                change = -1
+        except KeyError:
+            pass
         coll = self.bot.db[board_name]
-        coll.insert_one({"reactor": user.name, "message": message.id,"message_author": message.author,
-            "reaction": emoji, "antistar": False
-        })
+        coll.insert_one({"reactor": user.name, "message": message.id,"message_author": message.author.name,
+            "reaction": emoji, "antistar": antistar})
 
-        await self.update_starboard(message, board_name)
+        await self.update_starboard(message, board_name, change)
 
     # TODO: literally the opposite
 
@@ -50,7 +53,7 @@ class Starboard(commands.Cog, name="Starboard"):
         channel = ctx.channel.id
         threshold = threshold
         new_channel = {'name': name, 'guild': guild, 'channel': channel,
-                       'reaction': reaction, 'threshold': threshold, 'anti_star': ""}
+                       'reaction': reaction, 'threshold': threshold, 'antistar': ""}
         if self.bot.db.channels.count_documents({"guild": guild}) >= 2:
             await ctx.send("Reached limit (2) of starboards! Can't create another one!")
             return
@@ -66,17 +69,19 @@ class Starboard(commands.Cog, name="Starboard"):
         elif self.bot.db.channels.count_documents({"guild": guild, "name": name}) >= 1:
             await ctx.send("You've already made a starboard with that name.")
             return
-        self.bot.db.create_collection(name)
+        self.bot.db.create_collection(name + str(guild.id))
         self.bot.db.channels.insert_one(new_channel)
         await ctx.send("Starboard '" + name + "' created in this channel, with " + reaction +
                        " as reaction and threshold " + str(threshold))
 
     # modify - Subcommand for starboards to modify settings
     # Modifies properties for settings already here.
-    @starboard.command(help="Modifies threshold and anti-star feature.\n"
-                            "Setting threshold: `!starboard modify threshold [threshold]`\n"
-                            "Setting anti-star: `!starboard modify antistar [emoji]`"
-                            " or `!starboard modify antistar clear` to clear")
+    """ Modifies threshold and anti-star feature.
+        Setting threshold: `!starboard modify threshold [threshold]`
+        Setting anti-star: `!starboard modify antistar [emoji]`
+        or `!starboard modify antistar clear` to clear """
+
+    @starboard.command()
     async def modify(self, ctx, name: str, option: str, value: str):
         search = {"guild": ctx.guild.id, "name": name}
         valid_options = ["threshold", "antistar"]
@@ -108,22 +113,22 @@ class Starboard(commands.Cog, name="Starboard"):
             await ctx.send("Starboard " + name + "'s anti-star reaction set to " + value + ".")
         self.bot.db.channels.find_one_and_update(query=search, update={"$set": {option: value_to_assign}}, upsert=False)
 
+    # TODO: starboard list/remove subcommand to list starboards
 
     async def update_starboard(self, message, board_name, change):
         if change != 1 or change != -1: # makes it easy to know what the change is
             return
-
+        print("updating starboard...")
         # if already added and there's a message, skip the full posting system
-        board = self.bot.db.channels.find({"guild": message.guild.id, "name": board_name})
+        board = self.bot.db.channels.find_one({"guild": message.guild.id, "name": board_name})
         star_message = self.bot.db.star_messages.find_one_and_update(
             {"board_name": board_name, "star_message": message.id}, {"$inc": {'stars': change}},
             return_document=ReturnDocument.BEFORE, upsert=False)
-        print(star_message["message"])
         if star_message is not None:
-            sb_message = await self.bot.fetch_message(star_message["starboard_message"])
+            sb_message = await self.bot.fetch_message(star_message[0]["star_message"])
             if star_message[0]["stars"] < board[0]["threshold"]: # removing message: lost threshold
                 await sb_message.delete()
-            await sb_message.edit(content=str(int(star_message["stars"]) + change))
+            await sb_message.edit(content=str(int(star_message[0]["stars"]) + change))
             # note: getting from star message here will get the ReturnDocument prior to the change.
             return
 
@@ -136,12 +141,12 @@ class Starboard(commands.Cog, name="Starboard"):
         if stars + antistars >= board[0]["threshold"] and len(list(star_message)) == 0:
             star_channel = await self.bot.getchannel(board[0]["channel"])
             sb_message = await star_channel.send(content=str(stars+antistars) + reaction_entry["reaction"],
-                                                 embed=helpers.create_embed(stars+antistars, message, ))
+                                                 embed=helpers.create_embed(message))
             self.bot.db.star_messages.insert_one({
                 "board_name": board_name,
+                "message": message.id,
                 "star_message": sb_message.id,
                 "stars": stars+antistars,
-
             })
 
 

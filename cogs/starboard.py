@@ -29,7 +29,7 @@ class Starboard(commands.Cog, name="Starboard"):
             return  # no need to update db
         board_name, query = results[0], results[1]
         coll = self.bot.db[board_name]
-        coll.insert_one(query)
+        coll.delete_one(query)
         message = await self.bot.get_channel(payload.channel_id).fetch_message(query["message"])
         await self.update_starboard(message, board_name)
 
@@ -83,10 +83,10 @@ class Starboard(commands.Cog, name="Starboard"):
         Setting anti-star: `!starboard modify antistar [emoji]`
         or `!starboard modify antistar clear` to clear """
 
-    @starboard.command(help="!starboard modify [board name] [threshold] [value], or " +
-        "!starboard modify [board name] [antistar] [reaction or 'clear']")
+    @starboard.command(help="!starboard modify [board name] [antistar/threshold] [reaction/value]")
     async def modify(self, ctx, name: str, option: str, value: str):
-        search = {"guild": ctx.guild.id, "name": helpers.get_board_name(ctx.guild.id, name)}
+        board_name = helpers.get_board_name(ctx.guild.id, name)
+        search = {"guild": ctx.guild.id, "name": board_name}
         valid_options = ["threshold", "antistar"]
         if self.bot.db.channels.count_documents(search) == 0:
             await ctx.send("You don't have a starboard with this name.")
@@ -107,7 +107,7 @@ class Starboard(commands.Cog, name="Starboard"):
             return
         if value == "clear":
             value_to_assign = ""
-            clear_antistars()
+            self.clear_antistars(board_name)
             await ctx.send("Starboard " + name + "'s antistars cleared.")
         elif option == "threshold":
             value_to_assign = int(value)
@@ -115,7 +115,20 @@ class Starboard(commands.Cog, name="Starboard"):
         else:
             value_to_assign = value
             await ctx.send("Starboard " + name + "'s anti-star reaction set to " + value + ".")
-        self.bot.db.channels.find_one_and_update(query=search, update={"$set": {option: value_to_assign}}, upsert=False)
+        self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {option: value_to_assign}}, upsert=False)
+
+    @starboard.command(help="!starboard create [board name] [reaction] {threshold}")
+    async def remove(self, ctx, name: str):
+        board_name = helpers.get_board_name(ctx.guild.id, name)
+        search = {"guild": ctx.guild.id, "name": board_name}
+        board = self.bot.db.channels.find_one(search)
+        if board is None:
+            await ctx.send("Starboard " + name + " does not exist!")
+            return
+        self.bot.db.star_messages.delete_many({"board_name": board_name})
+        self.bot.db.drop_collection(board_name)
+        self.bot.db.channels.find_one_and_delete(search)
+        await ctx.send("Starboard " + name + " has been deleted!")
 
     # TODO: starboard list/remove subcommand to list starboards
 
@@ -124,20 +137,19 @@ class Starboard(commands.Cog, name="Starboard"):
     Given a reacted message and a board name, checks and sends a message to the respective star channel.
     """
     async def update_starboard(self, message, board_name):
-        print(board_name)
-        print(message.guild.id)
         coll = self.bot.db[board_name]
-        reaction_entry = coll.find_one({"message": message.id})
+        reaction_entry = coll.find_one({"message": message.id, "antistar": False})
+        if reaction_entry is None:  # there aren't no stars, so there's no more need to update
+            return
         stars = coll.count_documents({"message": message.id, "antistar": False})
         antistars = coll.count_documents({"message": message.id, "antistar": True})
         board = self.bot.db.channels.find_one({"guild": message.guild.id, "name": board_name})
-        print(board)
         star_message = self.bot.db.star_messages.find_one({"board_name": board_name, "message": message.id})
         star_channel = self.bot.get_channel(board["channel"])
 
         # check star_messages if it's already sent as a message, then edit it
         if star_message is not None:
-            update_message = await star_channel.fetch_message(self.bot.star_message["star_message"])
+            update_message = await star_channel.fetch_message(star_message["star_message"])
             await update_message.edit(content=str(int(stars - antistars)) + " " + reaction_entry["reaction"])
             return
 
@@ -152,10 +164,10 @@ class Starboard(commands.Cog, name="Starboard"):
                 "stars": stars + antistars,
             })
 
-def clear_antistars():
-    pass
-    # TODO, probably not too hard, because it really just means dump the anti-star entries
-
+    def clear_antistars(self, board_name):
+        coll = self.bot.db[board_name]
+        coll.delete_many(filter={"antistar": True})
+        self.bot.db.channels.find_one_and_update({"name": board_name}, {"$set": {"antistar": ""}})
 
 def setup(bot):
     bot.add_cog(Starboard(bot))

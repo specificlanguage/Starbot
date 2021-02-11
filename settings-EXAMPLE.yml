@@ -1,0 +1,4 @@
+discord_bot_token: [a long string of numbers that goes here]
+mongo_username: [your username to access mongoDB]
+mongo_password: [the password]
+mongo_db: [the name of the database that gets used]

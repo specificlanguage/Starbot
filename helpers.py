@@ -61,18 +61,15 @@ async def validate_reaction(bot, payload):
     message = await channel.fetch_message(payload.message_id)
     emoji = str(payload.emoji)  # this is due to mongodb's limitations. Probably have to fix this.
     user = bot.get_user(id=payload.user_id)
-    if user == message.author:
-        return None  # reactions made by users do not count.
     valid_reactions = bot.db.channels.find_one({"guild": channel.guild.id, "$or": [
         {"reaction": emoji}, {"antistar": emoji}]})
-    if valid_reactions is None:
-        return None  # no need to do anything here.
     board_name = valid_reactions["name"]
     star_messages = bot.db.star_messages.find_one(
         {"board_name": board_name, "star_message": payload.message_id})
-    if star_messages is not None:
-        return None  # message was a star channel notification message.
     antistar = False
+
+    if user == message.author or valid_reactions is None or star_messages is not None:
+        return None  # reactions made by users do not count.
     try:
         if valid_reactions["antistar"] == emoji:
             antistar = True
@@ -81,3 +78,19 @@ async def validate_reaction(bot, payload):
     return [board_name, {"reactor": user.name, "message": message.id,
                          "message_author": message.author.name,
                          "reaction": emoji, "antistar": antistar}]
+
+# check_if_emoji
+# Given a string, returns if it's an emoji or not. Pretty simple.
+
+def is_emoji(bot, emoji: discord.Emoji):
+    return emoji in bot.emojis
+
+# TODO: there's a discord conversion from emoji string to emoji name, probably need to implement later.
+
+def is_emoji_from_string(bot, emoji: str):
+    return emoji in [emote["name"] for emote in bot.emojis]
+
+def get_error_message(message_name):
+    errors = yaml.load(open("errors.yml", "r"), Loader=yaml.FullLoader)
+    return errors.get(message_name)
+

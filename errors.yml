@@ -1,0 +1,6 @@
+create_channel_being_used: "This channel is already being used for a starboard. Try another channel."
+create_too_many: "Reached limit (2) of starboards! Can't create another one!"
+create_reaction_used: "You're already using that reaction in this discord."
+create_name_used: "You've already made a starboard with that name."
+create_threshold_low: "You can't set a threshold that's equal to or less than 0."
+create_threshold_high: "The threshold given is too high! Try something lower."

@@ -1,6 +1,7 @@
 from discord.ext import commands
 import helpers
-
+import discord
+import sys
 
 class Starboard(commands.Cog, name="Starboard"):
     def __init__(self, bot):
@@ -21,7 +22,6 @@ class Starboard(commands.Cog, name="Starboard"):
 
     """on_raw_reaction_remove: updates starboard and database when reaction removed."""
 
-    # TODO: literally the opposite
     @commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload):
         results = await helpers.validate_reaction(self.bot, payload)
@@ -34,8 +34,7 @@ class Starboard(commands.Cog, name="Starboard"):
         await self.update_starboard(message, board_name)
 
     # top command for starboard settings command.
-    @commands.group(name="starboard", help="Creates, manages, and removes starboards." 
-                                           "!starboard remove [board name]",
+    @commands.group(name="starboard", help="Creates, manages, lists and removes starboards",
                     brief="Manages starboards")
     async def starboard(self, ctx):
         if ctx.invoked_subcommand is None:
@@ -45,31 +44,34 @@ class Starboard(commands.Cog, name="Starboard"):
         When command is run, given name, reaction, and threshold,
         creates a new starboard in the channel that the command is run.
     """
-
     # create() = is a subcommand for starboard settings.
     # creates a new channel
     @starboard.command(help="!starboard create [board name] [reaction] {threshold}\n")
-    async def create(self, ctx, name: str, reaction: str, threshold: int):
-        guild = ctx.guild.id
-        channel = ctx.channel.id
-        threshold = threshold
-        new_channel = {'name': helpers.get_board_name(guild, name), 'guild': guild, 'channel': channel,
+    async def create(self, ctx, name: str, reaction: str, threshold: str):
+        if not threshold.isnumeric():
+            ctx.send("Threshold must be a number.")
+            return
+
+        # set up variables
+        guild, channel, threshold = ctx.guild.id, ctx.channel.id, int(threshold)
+        coll_name = helpers.get_board_name(guild_id=guild, board_name=name)
+        starboards = list(self.bot.db.channels.find({"guild": guild}))
+        db_colls = self.bot.db.find_one(coll_name)
+
+        checks = {"channel_being_used": channel in [i["channel"] for i in starboards],
+                  "too_many": len(starboards) >= 2,
+                  "name_used": db_colls is None,
+                  "reaction_used": reaction in [i["reaction"] for i in starboards],
+                  "threshold_low": threshold <= 0,
+                  "threshold_high": threshold >= 1000000}
+
+        for key, value in checks:
+            if value:
+                await ctx.send("create_" + helpers.get_error_message(key))
+                return
+
+        new_channel = {'name': coll_name, 'guild': guild, 'channel': channel,
                        'reaction': reaction, 'threshold': threshold, 'antistar': ""}
-        if self.bot.db.channels.count_documents({"guild": guild}) >= 2:
-            await ctx.send("Reached limit (2) of starboards! Can't create another one!")
-            return
-        elif threshold <= 0:
-            await ctx.send("You can't set a threshold that's equal to or less than 0.")
-            return
-        elif self.bot.db.channels.count_documents({"guild": guild, "reaction": reaction}) >= 1:
-            await ctx.send("You're already using that reaction in this discord.")
-            return
-        elif self.bot.db.channels.count_documents({"channel": channel}) >= 1:  # we could delete this tbh
-            await ctx.send("This channel is already being used for a starboard. Try another channel.")
-            return
-        elif self.bot.db.channels.count_documents({"guild": guild, "name": name}) >= 1:
-            await ctx.send("You've already made a starboard with that name.")
-            return
         self.bot.db.create_collection(helpers.get_board_name(guild, name))
         self.bot.db.channels.insert_one(new_channel)
         await ctx.send("Starboard '" + name + "' created in this channel, with " + reaction +
@@ -88,6 +90,7 @@ class Starboard(commands.Cog, name="Starboard"):
         board_name = helpers.get_board_name(ctx.guild.id, name)
         search = {"guild": ctx.guild.id, "name": board_name}
         valid_options = ["threshold", "antistar"]
+
         if self.bot.db.channels.count_documents(search) == 0:
             await ctx.send("You don't have a starboard with this name.")
             return
@@ -117,7 +120,7 @@ class Starboard(commands.Cog, name="Starboard"):
             await ctx.send("Starboard " + name + "'s anti-star reaction set to " + value + ".")
         self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {option: value_to_assign}}, upsert=False)
 
-    @starboard.command(help="!starboard create [board name] [reaction] {threshold}")
+    @starboard.command(help="- Removes starboard  -  !starboard remove [board name]")
     async def remove(self, ctx, name: str):
         board_name = helpers.get_board_name(ctx.guild.id, name)
         search = {"guild": ctx.guild.id, "name": board_name}
@@ -130,7 +133,18 @@ class Starboard(commands.Cog, name="Starboard"):
         self.bot.db.channels.find_one_and_delete(search)
         await ctx.send("Starboard " + name + " has been deleted!")
 
-    # TODO: starboard list/remove subcommand to list starboards
+    @starboard.command(help="Lists starboards  -  !starboard list")
+    async def list(self, ctx):
+        channels = list(self.bot.db.channels.find({"guild": ctx.guild.id}))
+        embed = discord.Embed(title="Starboards in this discord:")
+        result = ""
+        for channel in channels:
+            names = channel["name"].split("-") # organized by [name, channel.id]
+            print(names)
+            self.bot.get_channel(int(names[1]))
+            result = result + names[0] + ":  #" + names[1] + "\n"
+        embed.add_field(name="Starboards: ", value=result)
+        await ctx.send(embed=embed)
 
     """
     update_starboard
@@ -155,8 +169,10 @@ class Starboard(commands.Cog, name="Starboard"):
 
         # if not a message yet, send a new one.
         if stars - antistars >= board["threshold"]:
-            sb_message = await star_channel.send(content=str(int(stars - antistars)) + " " + reaction_entry["reaction"],
-                                                 embed=helpers.create_embed(message))
+            sb_message = await star_channel.send(
+                content=str(int(stars - antistars)) + " " + reaction_entry["reaction"],
+                embed=helpers.create_embed(message))
+
             self.bot.db.star_messages.insert_one({
                 "board_name": board_name,
                 "message": message.id,

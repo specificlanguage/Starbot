@@ -33,7 +33,11 @@ async def on_disconnect():
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.UserInputError):
-        await ctx.send("Invalid input.")
+        await ctx.send("Incorrect arguments! Use !help [command] for more information.")
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("That's not a command, use !help.")
+    if isinstance(error, commands.CommandInvokeError):
+        await ctx.send("Incorrect arguments, use !help [command] for more info.")
     else:
         await ctx.send("Something wrong happened. Check the console.")
         raise error

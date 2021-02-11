@@ -1,7 +1,6 @@
 from discord.ext import commands
 import helpers
 import discord
-import sys
 
 class Starboard(commands.Cog, name="Starboard"):
     def __init__(self, bot):
@@ -44,8 +43,6 @@ class Starboard(commands.Cog, name="Starboard"):
         When command is run, given name, reaction, and threshold,
         creates a new starboard in the channel that the command is run.
     """
-    # create() = is a subcommand for starboard settings.
-    # creates a new channel
     @starboard.command(help="!starboard create [board name] [reaction] {threshold}\n")
     async def create(self, ctx, name: str, reaction: str, threshold: str):
         if not threshold.isnumeric():
@@ -61,13 +58,14 @@ class Starboard(commands.Cog, name="Starboard"):
         checks = {"channel_being_used": channel in [i["channel"] for i in starboards],
                   "too_many": len(starboards) >= 2,
                   "name_used": db_colls is None,
-                  "reaction_used": reaction in [i["reaction"] for i in starboards],
+                  "reaction_used": reaction in ([i["reaction"] for i in starboards] +
+                                                [i["antistar"] for i in starboards]),
                   "threshold_low": threshold <= 0,
                   "threshold_high": threshold >= 1000000}
 
         for key, value in checks:
             if value:
-                await ctx.send("create_" + helpers.get_error_message(key))
+                await ctx.send(helpers.get_error_message(key))
                 return
 
         new_channel = {'name': coll_name, 'guild': guild, 'channel': channel,
@@ -78,47 +76,57 @@ class Starboard(commands.Cog, name="Starboard"):
                        " as reaction and threshold " + str(threshold))
 
     # modify - Subcommand for starboards to modify settings
-    # Modifies properties for settings already here.
     """ modify - 
         Modifies threshold and anti-star feature.
         Setting threshold: `!starboard modify threshold [threshold]`
         Setting anti-star: `!starboard modify antistar [emoji]`
         or `!starboard modify antistar clear` to clear """
-
     @starboard.command(help="!starboard modify [board name] [antistar/threshold] [reaction/value]")
     async def modify(self, ctx, name: str, option: str, value: str):
         board_name = helpers.get_board_name(ctx.guild.id, name)
-        search = {"guild": ctx.guild.id, "name": board_name}
+        search = {"guild": ctx.guild.id}
         valid_options = ["threshold", "antistar"]
 
         if self.bot.db.channels.count_documents(search) == 0:
             await ctx.send("You don't have a starboard with this name.")
             return
-        if option not in valid_options:
+
+        # Update threshold of board
+        if option == valid_options[0]:
+            if not value.isnumeric():
+                await ctx.send("Threshold must be a number.")
+                return
+            threshold = int(value)
+            checks = {"threshold_low": threshold <= 0,
+                      "threshold_high": threshold >= 1000000}
+            for key, value in checks:
+                if value:
+                    await ctx.send(helpers.get_error_message())
+                    return
+            self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"threshold", value}},
+                                                     upsert=False)
+
+        # Update antistar option
+        if option == valid_options[1]:
+            if value.lower() == "clear":
+                self.clear_antistars(board_name)
+                await ctx.send("Cleared antistars. (You won't get them back!)")
+                await ctx.send("Restar a starred message to update that message.")
+                return
+            starboards = list(self.bot.db.channels.find({"guild": ctx.guild.id}))
+
+            checks = {}
+
+            emoji_used = [i["reactions"] for i in starboards] + [i["antistar"] for i in starboards]
+            if value in emoji_used:
+                await ctx.send(helpers.get_error_message("reaction_used"))
+                return
+            self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"antistar", value}},
+                                                     upsert=False)
+
+        else:
             await ctx.send("Not a valid option! Valid options: " + str(valid_options))
             return
-        elif value == "" or value is None:
-            await ctx.send("Incorrect values! Threshold requires a number, antistar requires a reaction.")
-            return
-        elif option == 'antistar' and (self.bot.db.channels.count_documents({"guild": ctx.guild.id, "reaction": value})
-                                       or self.bot.db.channels.count_documents(
-                    {"guild": ctx.guild.id, "antistar": value})):
-            await ctx.send("You're already using that emoji in this discord!")
-            return
-        elif option == 'threshold' and int(value) <= 0:
-            await ctx.send("You can't set a threshold that's equal to or less than 0.")
-            return
-        if value == "clear":
-            value_to_assign = ""
-            self.clear_antistars(board_name)
-            await ctx.send("Starboard " + name + "'s antistars cleared.")
-        elif option == "threshold":
-            value_to_assign = int(value)
-            await ctx.send("Starboard " + name + "'s threshold settings set to " + value + ".")
-        else:
-            value_to_assign = value
-            await ctx.send("Starboard " + name + "'s anti-star reaction set to " + value + ".")
-        self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {option: value_to_assign}}, upsert=False)
 
     @starboard.command(help="- Removes starboard  -  !starboard remove [board name]")
     async def remove(self, ctx, name: str):

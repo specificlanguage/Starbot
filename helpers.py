@@ -1,6 +1,8 @@
 import yaml
 import logging
 import discord
+import re
+from emoji import UNICODE_EMOJI
 
 settings = yaml.load(open("settings.yml", "r"), Loader=yaml.FullLoader)
 
@@ -82,13 +84,13 @@ async def validate_reaction(bot, payload):
 # check_if_emoji
 # Given a string, returns if it's an emoji or not. Pretty simple.
 
-def is_emoji(bot, emoji: discord.Emoji):
-    return emoji in bot.emojis
-
-# TODO: there's a discord conversion from emoji string to emoji name, probably need to implement later.
-
-def is_emoji_from_string(bot, emoji: str):
-    return emoji in [emote["name"] for emote in bot.emojis]
+def is_emoji(bot, emoji: str):
+    if emoji in UNICODE_EMOJI:
+        return True
+    name, emoji_id = re.split(":>", emoji) # Note: discord emojis are in format <:name:id>
+    if bot.get_emoji(emoji_id) is not None:
+        return True
+    return False
 
 def get_error_message(message_name):
     errors = yaml.load(open("errors.yml", "r"), Loader=yaml.FullLoader)

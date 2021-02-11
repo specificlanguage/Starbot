@@ -60,6 +60,7 @@ class Starboard(commands.Cog, name="Starboard"):
                   "name_used": db_colls is None,
                   "reaction_used": reaction in ([i["reaction"] for i in starboards] +
                                                 [i["antistar"] for i in starboards]),
+                  "is_emoji": helpers.is_emoji(self.bot, reaction)
                   "threshold_low": threshold <= 0,
                   "threshold_high": threshold >= 1000000}
 
@@ -99,9 +100,9 @@ class Starboard(commands.Cog, name="Starboard"):
             threshold = int(value)
             checks = {"threshold_low": threshold <= 0,
                       "threshold_high": threshold >= 1000000}
-            for key, value in checks:
-                if value:
-                    await ctx.send(helpers.get_error_message())
+            for key, val in checks:
+                if val:
+                    await ctx.send(helpers.get_error_message(key))
                     return
             self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"threshold", value}},
                                                      upsert=False)
@@ -115,12 +116,14 @@ class Starboard(commands.Cog, name="Starboard"):
                 return
             starboards = list(self.bot.db.channels.find({"guild": ctx.guild.id}))
 
-            checks = {}
+            checks = {"emoji_used": value in [i["reactions"] for i in starboards] +
+                                             [i["antistar"] for i in starboards],
+                      "is_emoji": helpers.is_emoji(self.bot, value)}
 
-            emoji_used = [i["reactions"] for i in starboards] + [i["antistar"] for i in starboards]
-            if value in emoji_used:
-                await ctx.send(helpers.get_error_message("reaction_used"))
-                return
+            for key, val in checks:
+                if val:
+                    await ctx.send(helpers.get_error_message(key))
+
             self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"antistar", value}},
                                                      upsert=False)
 

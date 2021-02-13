@@ -2,7 +2,7 @@ import yaml
 import logging
 import discord
 import re
-from emoji import UNICODE_EMOJI
+from emoji import emoji_count
 
 settings = yaml.load(open("settings.yml", "r"), Loader=yaml.FullLoader)
 
@@ -65,13 +65,14 @@ async def validate_reaction(bot, payload):
     user = bot.get_user(id=payload.user_id)
     valid_reactions = bot.db.channels.find_one({"guild": channel.guild.id, "$or": [
         {"reaction": emoji}, {"antistar": emoji}]})
+    if valid_reactions is None or user == message.author:
+        return None
     board_name = valid_reactions["name"]
     star_messages = bot.db.star_messages.find_one(
         {"board_name": board_name, "star_message": payload.message_id})
     antistar = False
-
-    if user == message.author or valid_reactions is None or star_messages is not None:
-        return None  # reactions made by users do not count.
+    if star_messages is not None:
+        return None
     try:
         if valid_reactions["antistar"] == emoji:
             antistar = True
@@ -85,12 +86,11 @@ async def validate_reaction(bot, payload):
 # Given a string, returns if it's an emoji or not. Pretty simple.
 
 def is_emoji(bot, emoji: str):
-    if emoji in UNICODE_EMOJI:
+    if emoji_count(emoji) > 0:
         return True
-    name, emoji_id = re.split(":>", emoji) # Note: discord emojis are in format <:name:id>
-    if bot.get_emoji(emoji_id) is not None:
-        return True
-    return False
+    names = ["<:" + e.name + ":" + str(e.id) + ">" for e in bot.emojis]
+    print(names)
+    return emoji in names
 
 def get_error_message(message_name):
     errors = yaml.load(open("errors.yml", "r"), Loader=yaml.FullLoader)

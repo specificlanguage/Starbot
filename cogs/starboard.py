@@ -45,6 +45,7 @@ class Starboard(commands.Cog, name="Starboard"):
     """
     @starboard.command(help="!starboard create [board name] [reaction] {threshold}\n")
     async def create(self, ctx, name: str, reaction: str, threshold: str):
+
         if not threshold.isnumeric():
             ctx.send("Threshold must be a number.")
             return
@@ -53,18 +54,19 @@ class Starboard(commands.Cog, name="Starboard"):
         guild, channel, threshold = ctx.guild.id, ctx.channel.id, int(threshold)
         coll_name = helpers.get_board_name(guild_id=guild, board_name=name)
         starboards = list(self.bot.db.channels.find({"guild": guild}))
-        db_colls = self.bot.db.find_one(coll_name)
 
-        checks = {"channel_being_used": channel in [i["channel"] for i in starboards],
+        checks = {"name_too_long": len("starbot." + coll_name) >= 100,
+                  "name_too_short": len(name) < 0,
+                  "channel_being_used": channel in [i["channel"] for i in starboards],
                   "too_many": len(starboards) >= 2,
-                  "name_used": db_colls is None,
+                  "name_used": name in [i["name"] for i in starboards],
                   "reaction_used": reaction in ([i["reaction"] for i in starboards] +
                                                 [i["antistar"] for i in starboards]),
-                  "is_emoji": helpers.is_emoji(self.bot, reaction)
+                  "is_not_emoji": not helpers.is_emoji(self.bot, reaction),
                   "threshold_low": threshold <= 0,
                   "threshold_high": threshold >= 1000000}
 
-        for key, value in checks:
+        for key, value in checks.items():
             if value:
                 await ctx.send(helpers.get_error_message(key))
                 return
@@ -85,7 +87,7 @@ class Starboard(commands.Cog, name="Starboard"):
     @starboard.command(help="!starboard modify [board name] [antistar/threshold] [reaction/value]")
     async def modify(self, ctx, name: str, option: str, value: str):
         board_name = helpers.get_board_name(ctx.guild.id, name)
-        search = {"guild": ctx.guild.id}
+        search = {"guild": ctx.guild.id, "name": board_name}
         valid_options = ["threshold", "antistar"]
 
         if self.bot.db.channels.count_documents(search) == 0:
@@ -100,12 +102,13 @@ class Starboard(commands.Cog, name="Starboard"):
             threshold = int(value)
             checks = {"threshold_low": threshold <= 0,
                       "threshold_high": threshold >= 1000000}
-            for key, val in checks:
+            for key, val in checks.items():
                 if val:
                     await ctx.send(helpers.get_error_message(key))
                     return
-            self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"threshold", value}},
+            self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"threshold": value}},
                                                      upsert=False)
+            await ctx.send("Starboard '" + name + "' threshold set to " + value)
 
         # Update antistar option
         if option == valid_options[1]:
@@ -116,16 +119,15 @@ class Starboard(commands.Cog, name="Starboard"):
                 return
             starboards = list(self.bot.db.channels.find({"guild": ctx.guild.id}))
 
-            checks = {"emoji_used": value in [i["reactions"] for i in starboards] +
+            checks = {"emoji_used": value in [i["reaction"] for i in starboards] +
                                              [i["antistar"] for i in starboards],
-                      "is_emoji": helpers.is_emoji(self.bot, value)}
+                      "is_not_emoji": not helpers.is_emoji(self.bot, value)}
 
-            for key, val in checks:
+            for key, val in checks.items():
                 if val:
                     await ctx.send(helpers.get_error_message(key))
-
-            self.bot.db.channels.find_one_and_update(filter=search, update={"$set": {"antistar", value}},
-                                                     upsert=False)
+            self.bot.db.channels.find_one_and_update(search, {"$set":{"antistar": value}})
+            await ctx.send("Starboard '" + name + "' antistar changed to " + value)
 
         else:
             await ctx.send("Not a valid option! Valid options: " + str(valid_options))
@@ -142,7 +144,7 @@ class Starboard(commands.Cog, name="Starboard"):
         self.bot.db.star_messages.delete_many({"board_name": board_name})
         self.bot.db.drop_collection(board_name)
         self.bot.db.channels.find_one_and_delete(search)
-        await ctx.send("Starboard " + name + " has been deleted!")
+        await ctx.send("Starboard '" + name + "' has been deleted!")
 
     @starboard.command(help="Lists starboards  -  !starboard list")
     async def list(self, ctx):
@@ -150,10 +152,10 @@ class Starboard(commands.Cog, name="Starboard"):
         embed = discord.Embed(title="Starboards in this discord:")
         result = ""
         for channel in channels:
-            names = channel["name"].split("-") # organized by [name, channel.id]
-            print(names)
-            self.bot.get_channel(int(names[1]))
-            result = result + names[0] + ":  #" + names[1] + "\n"
+            ch_name, guild_id = channel["name"].split("-")
+            ch_id = channel["channel"]
+            ch = self.bot.get_channel(ch_id)
+            result = result + ch_name + ":  #" + ch.name + "\n"
         embed.add_field(name="Starboards: ", value=result)
         await ctx.send(embed=embed)
 

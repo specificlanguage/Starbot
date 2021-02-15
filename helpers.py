@@ -42,9 +42,12 @@ def create_embed(message):
 
 # get_board_name:
 # Gets the board name. The database makes it so that the board name has the guild id preceding the board_name.
-def get_board_name(guild_id, board_name):
+def get_db_board_name(guild_id, board_name):
     return board_name + "-" + str(guild_id)
 
+# raw_board name:
+def get_raw_board_name(board_name):
+    return board_name.split("-")[0]
 
 """ 
 validate_reaction() does all the work to validate reactions and check for several things:
@@ -65,22 +68,18 @@ async def validate_reaction(bot, payload):
     user = bot.get_user(id=payload.user_id)
     valid_reactions = bot.db.channels.find_one({"guild": channel.guild.id, "$or": [
         {"reaction": emoji}, {"antistar": emoji}]})
-    if valid_reactions is None or user == message.author:
+    if valid_reactions is None or user == message.author or user.bot:
         return None
     board_name = valid_reactions["name"]
-    star_messages = bot.db.star_messages.find_one(
-        {"board_name": board_name, "star_message": payload.message_id})
     antistar = False
-    if star_messages is not None:
-        return None
     try:
         if valid_reactions["antistar"] == emoji:
             antistar = True
     except KeyError:
         pass
-    return [board_name, {"reactor": user.name, "message": message.id,
+    return (board_name, {"board_name": board_name, "reactor": user.name, "message": message.id,
                          "message_author": message.author.name,
-                         "reaction": emoji, "antistar": antistar}]
+                         "reaction": emoji, "antistar": antistar})
 
 # check_if_emoji
 # Given a string, returns if it's an emoji or not. Pretty simple.
@@ -89,7 +88,6 @@ def is_emoji(bot, emoji: str):
     if emoji_count(emoji) > 0:
         return True
     names = ["<:" + e.name + ":" + str(e.id) + ">" for e in bot.emojis]
-    print(names)
     return emoji in names
 
 def get_error_message(message_name):

@@ -1,6 +1,6 @@
 from discord.ext import commands
 from database import Database
-import settings
+import helpers
 import discord
 
 desc = """
@@ -8,8 +8,9 @@ desc = """
 """
 
 intents = discord.Intents.default()
+intents.members = True
 db = Database()
-discord_token = settings.get_token()
+discord_token = helpers.get_token()
 
 class Bot(commands.Bot):
     def __init__(self, db, command_prefix, *args, **kwargs):
@@ -32,8 +33,13 @@ async def on_disconnect():
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.UserInputError):
-        await ctx.send("Invalid input.")
+        await ctx.send("Incorrect arguments! Use !help [command] for more information.")
+    elif isinstance(error, commands.CommandNotFound):
+        return
+    # elif isinstance(error, commands.CommandInvokeError):
+    #    await ctx.send("Incorrect arguments, use !help [command] for more info.")
     else:
+        await ctx.send("Something wrong happened. Check the console.")
         raise error
 
 @bot.command(name="ping")

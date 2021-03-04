@@ -1,4 +1,6 @@
-import discord, helpers, pymongo
+import discord
+import helpers
+import pymongo
 
 async def update_starboard(bot, message, board_name):
     reaction_entry = bot.db.stars.find_one({"message": message.id, "antistar": False})
@@ -29,8 +31,6 @@ async def update_starboard(bot, message, board_name):
             "stars": stars + antistars,
         })
 
-"""channels needs to be a dictionary with all starboard channels, requested from mongodb:"""
-
 async def send_leaderboard(bot, ctx):
     embed = discord.Embed(title="Top posts:")
     channels = list(bot.db.channels.find({"guild": ctx.guild.id}))
@@ -43,68 +43,66 @@ async def send_leaderboard(bot, ctx):
         leaderboard = ""
         for j in range(min(len(top_posts), 5)):
             message = ctx.channel.get_partial_message(top_posts[j]["message"])
-            leaderboard += "[" + str(message.id) + "]" + "(" + message.jump_url + ") - " + \
-                           str(top_posts[j]["stars"]) + " " + channels[i]["reaction"] + "\n"
+            leaderboard += ":{}: [{}]({}) - {} {}\n" \
+                .format(str(j+1), str(message.id), message.jump_url,
+                        str(top_posts[j]["stars"]), channels[i]["reaction"])
         if leaderboard == "":
             continue
         embed.add_field(name="Top posts in " + helpers.get_raw_board_name(board_name),
                         value=leaderboard)
-    # still need to get highest user's stars, highest star givers
 
-    top_users, top_givers = "", ""
-    stars_received = bot.db.stars.aggregate([
-        {"$match": {"guild": ctx.guild.id, "antistar": False}},
-        {"$group": {"_id": "$message_author", "total": {"$sum": "$amount"}}}
-    ])
+    recieved_pipeline = [{'$match': {'guild': ctx.guild.id, 'antistar': False}},
+                         {'$group': {'_id': '$message_author', 'count': {'$sum': 1}}},
+                         {'$sort': {'count': -1}}]
 
-    stars_given = bot.db.stars.aggregate([
-        {"$match": {"guild": ctx.guild.id, "antistar": False}},
-        {"$group": {"_id": "$reactor", "total": {"$sum": "$amount"}}}
-    ])
+    gave_pipeline = [{'$match': {'guild': ctx.guild.id, 'antistar': False}},
+                     {'$group': {'_id': '$reactor', 'count': {'$sum': 1}}},
+                     {'$sort': {'count': -1}}]
 
-    for doc in stars_received:
-        top_users += doc["_id"] + " (" + doc["total"] + " stars)\n"
-    for doc in stars_given:
-        top_givers += doc["_id"] + " (" + doc["total"] + " stars)\n"
-    if top_users != "" or None:
-        embed.add_field(name="Top star receivers: ",
-                        value=top_users)
-    if top_givers != "" or None:
-        embed.add_field(name="Top star givers: ",
-                        value=top_givers)
+    highest_star_receivers = list(bot.db.stars.aggregate(recieved_pipeline))
+    highest_star_givers = list(bot.db.stars.aggregate(gave_pipeline))
 
-    """ 
-    # top users:
-    index = 0
-    for i in range(min(len(stars_received), 5)):
-        \n"
+    top_receivers, top_givers = "", ""
+    for i in range(min(len(highest_star_receivers), 5)):
+        item = highest_star_receivers[i]
+        top_receivers += ":{}: {} ({})\n".format(str(i), item["_id"], item["count"])
+    if top_receivers != "":
+        embed.add_field(name="Top star receivers: ", value=top_receivers)
 
-    for i in stars_given:
-        top_givers += str(index + 1) + ". " + i["_id"] + " (" + i["total"] + " stars)\n"
-    """
+    for i in range(min(len(highest_star_givers), 5)):
+        item = highest_star_receivers[i]
+        top_givers += ":{}: {} ({})\n".format(str(i), item["_id"], item["count"])
+    if top_givers != "":
+        embed.add_field(name="Top star givers: ", value=top_givers)
+
     return embed
+
 
 def send_user_leaderboard(bot, user, guild_id):
     embed = discord.Embed()
-    top_users, top_givers = "", ""
+    top_receivers, top_givers = "", ""
 
-    stars_received = list(bot.db.stars.aggregate([
+    received_pipeline = [
         {"$match": {"guild": guild_id, "antistar": False, "message_author": user.name}},
-        {"$group": {"_id": "$reactor", "total": {"$sum": "$amount"}}}
-    ]))
+        {"$group": {"_id": "$reactor", "count": {"$sum": 1}}},
+        {"$sort": {'count': -1}}]
+    given_pipeline = [{"$match": {"guild": guild_id, "antistar": False, "reactor": user.name}},
+        {"$group": {"_id": "$reactor", "count": {"$sum": 1}}},
+        {"$sort": {'count': -1}}]
 
-    stars_given = list(bot.db.stars.aggregate([
-        {"$match": {"guild": guild_id, "antistar": False, "reactor": user.name}},
-        {"$group": {"_id": "$message_author", "total": {"$sum": "$amount"}}}
-    ]))
-
-    print(stars_given, stars_received)
+    stars_received = list(bot.db.stars.aggregate(received_pipeline))
+    stars_given = list(bot.db.stars.aggregate(given_pipeline))
 
     for i in range(min(len(stars_received), 5)):
-        top_users += stars_received[i]["_id"] + "\n"
-    embed.add_field(name="Your fans: (top reactors to your messages)", value=top_users)
+        item = stars_received[i]
+        top_receivers += ":{}: {} ({})\n".format(str(i), item["_id"], item["count"])
 
     for i in range(min(len(stars_given), 5)):
-        top_givers += stars_given[i]["_id"] + "\n"
-    embed.add_field(name="You're a fan of: (top message authors)", value=top_users)
+        item = stars_given[i]
+        top_givers += ":{}: {} ({})\n".format(str(i), item["_id"], item["count"])
+
+    if top_givers != "":
+        embed.add_field(name="Your beta orbiters: ", value=top_receivers)
+        embed.add_field(name="Your idols: ", value=top_givers)
+
     return embed

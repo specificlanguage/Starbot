@@ -1,7 +1,6 @@
 import yaml
 import logging
 import discord
-import re
 from emoji import emoji_count
 
 settings = yaml.load(open("settings.yml", "r"), Loader=yaml.FullLoader)
@@ -21,6 +20,9 @@ def get_token():
 
 def get_credentials():
     return [settings.get("mongo_username"), settings.get("mongo_password"), settings.get("mongo_db")]
+
+def get_board_limit():
+    return int(settings.get("board_limit_per_guild"))
 
 # create_embed
 # Creates embeds for messages for starboards.
@@ -78,7 +80,7 @@ async def validate_reaction(bot, payload):
     except KeyError:
         pass
     return (board_name, {"board_name": board_name, "reactor": user.name, "message": message.id,
-                         "message_author": message.author.name,
+                         "message_author": message.author.name, "guild": payload.guild_id,
                          "reaction": emoji, "antistar": antistar})
 
 # check_if_emoji

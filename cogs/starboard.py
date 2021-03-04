@@ -37,6 +37,7 @@ class Starboard(commands.Cog, name="Starboard"):
         if ctx.invoked_subcommand is None:
             await ctx.send("Incorrect subcommand! Try !help starboard for more info.")
 
+
     """ create -
         When command is run, given name, reaction, and threshold,
         creates a new starboard in the channel that the command is run.
@@ -56,7 +57,7 @@ class Starboard(commands.Cog, name="Starboard"):
         checks = {"name_too_long": len("starbot." + coll_name) >= 100,
                   "name_too_short": len(name) < 0,
                   "channel_being_used": channel in [i["channel"] for i in starboards],
-                  "too_many": len(starboards) >= 2,
+                  "too_many": len(starboards) >= helpers.get_board_limit(),
                   "name_used": name in [i["name"] for i in starboards],
                   "reaction_used": reaction in ([i["reaction"] for i in starboards] +
                                                 [i["antistar"] for i in starboards]),
@@ -125,6 +126,7 @@ class Starboard(commands.Cog, name="Starboard"):
                 if val:
                     await ctx.send(helpers.get_error_message(key))
                     return
+
             self.bot.db.channels.find_one_and_update(search, {"$set":{"antistar": value}})
             await ctx.send("Starboard '" + name + "' antistar changed to " + value)
             return

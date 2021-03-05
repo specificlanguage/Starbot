@@ -1,9 +1,10 @@
 import yaml
 import logging
 import discord
-from emoji import emoji_count
+import emoji
 
 settings = yaml.load(open("settings.yml", "r"), Loader=yaml.FullLoader)
+rank_list = ["{}\N{COMBINING ENCLOSING KEYCAP}".format(num) for num in range(1, 6)]
 
 # logger
 logger = logging.getLogger('discord')
@@ -86,8 +87,8 @@ async def validate_reaction(bot, payload):
 # check_if_emoji
 # Given a string, returns if it's an emoji or not. Pretty simple.
 
-def is_emoji(bot, emoji: str):
-    if emoji_count(emoji) > 0:
+def is_emoji(bot, emote: str):
+    if emoji.emoji_count(emote) > 0:
         return True
     names = ["<:" + e.name + ":" + str(e.id) + ">" for e in bot.emojis]
     return emoji in names
@@ -96,3 +97,10 @@ def get_error_message(message_name):
     errors = yaml.load(open("errors.yml", "r"), Loader=yaml.FullLoader)
     return errors.get(message_name)
 
+def aggregate_to_str(bot, collection, pipeline, num_results=5):
+    result, cool_emojis = "", []
+    aggregation = list(bot.db[collection].aggregate(pipeline))
+    for i in range(min(len(aggregation), num_results)):
+        item = aggregation[i]
+        result += "{} {} ({})\n".format(rank_list[i], item["_id"], item["count"])
+    return result

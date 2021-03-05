@@ -164,15 +164,21 @@ class Starboard(commands.Cog, name="Starboard"):
             embed.add_field(name=ch_name, value=result)
         await ctx.send(embed=embed)
 
-    @commands.command(name="stars", help="Finds highest starred messages from all starboards, and links them. \n"
+    @commands.command(name="leaderboard", help="Finds highest starred messages from all starboards, and links them. \n"
                                          "Mention a user to get their highest posts.")
-    async def leaderboard(self, ctx):
+    async def leaderboard(self, ctx, board_name=None):
         if not ctx.message.raw_mentions:
-            embed = await messages.send_leaderboard(self.bot, ctx)
+            if not board_name:
+                embed = await messages.all_leaderboards(self.bot, ctx)
+                embed.set_footer(text="For more info on a board, put the board on an argument!")
+                await ctx.send(embed=embed)
+                return
+            embed = discord.Embed(title="Top Posts in {}".format(board_name), colour=discord.Colour.blue())
+            await messages.send_leaderboard(self.bot, ctx, helpers.get_db_board_name(ctx.guild.id, board_name), embed)
             await ctx.send(embed=embed)
             return
-        user = self.bot.get_user(ctx.raw_mentions[0])
-        embed = await messages.send_user_leaderboard(self.bot, user, guild_id=ctx.guild.id)
+        user = self.bot.get_user(ctx.message.raw_mentions[0])
+        embed = await messages.send_user_leaderboard(self.bot, ctx, user, guild_id=ctx.guild.id)
         await ctx.send(embed=embed)
 
     """

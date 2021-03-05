@@ -71,9 +71,15 @@ async def send_leaderboard(bot, ctx, board_name, embed, short=False):
 
     return embed
 
+async def all_user_leaderboards(bot, ctx, user):
+    embed = discord.Embed(title="Top posts:", color=discord.Colour.blue())
+    channels = list(bot.db.channels.find({"guild": ctx.guild.id}))
+    for i in range(len(channels)):
+        await send_user_leaderboard(bot, ctx, user, channels[i]["name"], embed, short=True)
+    return embed
 
-async def send_user_leaderboard(bot, ctx, user, guild_id):
-    embed = discord.Embed(title="Your top posts and idols:", color=discord.Colour.blue())
+
+async def send_user_leaderboard(bot, ctx, user, board_name, embed, short=False):
     embed.set_author(name=user.name, icon_url=user.avatar_url)
     top_posts = list(bot.db.star_messages.find({"author": user.name}).sort("stars", pymongo.DESCENDING))
     leaderboard = ""
@@ -84,13 +90,15 @@ async def send_user_leaderboard(bot, ctx, user, guild_id):
             .format(str(j+1), str(message.id), message.jump_url,
                     str(top_posts[j]["stars"]), top_posts[j]["reaction"])
     if leaderboard != "":
-        embed.add_field(name="Top posts (from all boards): ", value=leaderboard)
+        embed.add_field(name="Top posts (from all boards): ", value=leaderboard, inline=True)
+    if short:
+        return embed
 
     received_pipeline = [
-        {"$match": {"guild": guild_id, "antistar": False, "message_author": user.name}},
+        {"$match": {"board_name": board_name, "antistar": False, "message_author": user.name}},
         {"$group": {"_id": "$reactor", "count": {"$sum": 1}}},
         {"$sort": {'count': -1}}]
-    given_pipeline = [{"$match": {"guild": guild_id, "antistar": False, "reactor": user.name}},
+    given_pipeline = [{"$match": {"board_name": board_name, "antistar": False, "reactor": user.name}},
         {"$group": {"_id": "$message_author", "count": {"$sum": 1}}},
         {"$sort": {'count': -1}}]
 
@@ -98,8 +106,9 @@ async def send_user_leaderboard(bot, ctx, user, guild_id):
     top_givers = helpers.aggregate_to_str(bot, "stars", given_pipeline)
 
     if top_receivers != "":
-        embed.add_field(name="Your beta orbiters: ", value=top_receivers)
+        embed.add_field(name="Your beta orbiters in {}: ".format(helpers.get_raw_board_name(board_name)),
+                        value=top_receivers)
     if top_givers != "":
-        embed.add_field(name="Your idols: ", value=top_givers)
+        embed.add_field(name="Your idols in {}: ".format(helpers.get_raw_board_name(board_name)), value=top_givers)
 
     return embed

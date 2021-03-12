@@ -67,10 +67,16 @@ Upon success, it will return a list with two objects:
 async def validate_reaction(bot, payload):
     channel = bot.get_channel(payload.channel_id)
     message = await channel.fetch_message(payload.message_id)
+
+    if bot.db.star_messages.find_one({"star_message": payload.message_id}):
+        # don't want to star if it's just the relay
+        return None
+
     emoji = str(payload.emoji)  # this is due to mongodb's limitations. Probably have to fix this.
     user = bot.get_user(id=payload.user_id)
     valid_reactions = bot.db.channels.find_one({"guild": channel.guild.id, "$or": [
         {"reaction": emoji}, {"antistar": emoji}]})
+
     if valid_reactions is None or user == message.author or user.bot:
         return None
     board_name = valid_reactions["name"]

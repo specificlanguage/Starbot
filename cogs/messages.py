@@ -11,14 +11,14 @@ async def update_starboard(bot, message, board_name):
     board = bot.db.channels.find_one({"guild": message.guild.id, "name": board_name})
     star_message = bot.db.star_messages.find_one({"board_name": board_name, "message": message.id})
     star_channel = bot.get_channel(board["channel"])
+    total_stars = int(stars - antistars)
 
     # check star_messages if it's already sent as a message, then edit it
     if star_message is not None:
         update_message = await star_channel.fetch_message(star_message["star_message"])
-        await update_message.edit(content=str(int(stars - antistars)) + " " + reaction_entry["reaction"])
+        await update_message.edit(content=str(total_stars) + " " + reaction_entry["reaction"])
         return
 
-    total_stars = int(stars - antistars)
     # if not a message yet, send a new one.
     if total_stars >= board["threshold"]:
         sb_message = await star_channel.send(
@@ -29,6 +29,9 @@ async def update_starboard(bot, message, board_name):
             "message": message.id,
             "star_message": sb_message.id,
             "stars": stars + antistars,
+            "guild": message.guild.id,
+            "reaction": reaction_entry["reaction"],
+            "author": message.author.name
         })
 
 async def all_leaderboards(bot, ctx):
@@ -65,9 +68,9 @@ async def send_leaderboard(bot, ctx, board_name, embed, short=False):
     top_givers = helpers.aggregate_to_str(bot, "stars", gave_pipeline)
 
     if top_receivers != "":
-        embed.add_field(name="Top star receivers: ", value=top_receivers, inline=True)
+        embed.add_field(name="Top star receivers: ", value=top_receivers, inline=False)
     if top_givers != "":
-        embed.add_field(name="Top star givers: ", value=top_givers, inline=True)
+        embed.add_field(name="Top star givers: ", value=top_givers, inline=False)
 
     return embed
 
@@ -80,17 +83,19 @@ async def all_user_leaderboards(bot, ctx, user):
 
 
 async def send_user_leaderboard(bot, ctx, user, board_name, embed, short=False):
+    raw_bn = helpers.get_raw_board_name(board_name)
     embed.set_author(name=user.name, icon_url=user.avatar_url)
     top_posts = list(bot.db.star_messages.find({"author": user.name}).sort("stars", pymongo.DESCENDING))
     leaderboard = ""
 
     for j in range(min(len(top_posts), 5)):
         message = ctx.channel.get_partial_message(top_posts[j]["message"])
-        leaderboard += "{}. [{}]({}) - {} {}\n" \
+        leaderboard += "{}. [{}]({}) - {}{}\n" \
             .format(str(j+1), str(message.id), message.jump_url,
                     str(top_posts[j]["stars"]), top_posts[j]["reaction"])
     if leaderboard != "":
-        embed.add_field(name="Top posts (from all boards): ", value=leaderboard, inline=True)
+        embed.add_field(name="{}'s top posts in {}: ".format(user.name, raw_bn),
+                        value=leaderboard, inline=True)
     if short:
         return embed
 
@@ -107,8 +112,9 @@ async def send_user_leaderboard(bot, ctx, user, board_name, embed, short=False):
 
     if top_receivers != "":
         embed.add_field(name="Your beta orbiters in {}: ".format(helpers.get_raw_board_name(board_name)),
-                        value=top_receivers)
+                        value=top_receivers, inline=False)
     if top_givers != "":
-        embed.add_field(name="Your idols in {}: ".format(helpers.get_raw_board_name(board_name)), value=top_givers)
+        embed.add_field(name="Your idols in {}: ".format(helpers.get_raw_board_name(board_name)),
+                        value=top_givers, inline=False)
 
     return embed

@@ -1,10 +1,10 @@
 import yaml
 import logging
 import discord
-import re
-from emoji import emoji_count
+import emoji
 
 settings = yaml.load(open("settings.yml", "r"), Loader=yaml.FullLoader)
+rank_list = ["{}\N{COMBINING ENCLOSING KEYCAP}".format(num) for num in range(1, 6)]
 
 # logger
 logger = logging.getLogger('discord')
@@ -21,6 +21,9 @@ def get_token():
 
 def get_credentials():
     return [settings.get("mongo_username"), settings.get("mongo_password"), settings.get("mongo_db")]
+
+def get_board_limit():
+    return int(settings.get("board_limit_per_guild"))
 
 # create_embed
 # Creates embeds for messages for starboards.
@@ -64,10 +67,16 @@ Upon success, it will return a list with two objects:
 async def validate_reaction(bot, payload):
     channel = bot.get_channel(payload.channel_id)
     message = await channel.fetch_message(payload.message_id)
+
+    if bot.db.star_messages.find_one({"star_message": payload.message_id}):
+        # don't want to star if it's just the relay
+        return None
+
     emoji = str(payload.emoji)  # this is due to mongodb's limitations. Probably have to fix this.
     user = bot.get_user(id=payload.user_id)
     valid_reactions = bot.db.channels.find_one({"guild": channel.guild.id, "$or": [
         {"reaction": emoji}, {"antistar": emoji}]})
+
     if valid_reactions is None or user == message.author or user.bot:
         return None
     board_name = valid_reactions["name"]
@@ -78,14 +87,14 @@ async def validate_reaction(bot, payload):
     except KeyError:
         pass
     return (board_name, {"board_name": board_name, "reactor": user.name, "message": message.id,
-                         "message_author": message.author.name,
+                         "message_author": message.author.name, "guild": payload.guild_id,
                          "reaction": emoji, "antistar": antistar})
 
 # check_if_emoji
 # Given a string, returns if it's an emoji or not. Pretty simple.
 
-def is_emoji(bot, emoji: str):
-    if emoji_count(emoji) > 0:
+def is_emoji(bot, emote: str):
+    if emoji.emoji_count(emote) > 0:
         return True
     names = ["<:" + e.name + ":" + str(e.id) + ">" for e in bot.emojis]
     return emoji in names
@@ -94,3 +103,10 @@ def get_error_message(message_name):
     errors = yaml.load(open("errors.yml", "r"), Loader=yaml.FullLoader)
     return errors.get(message_name)
 
+def aggregate_to_str(bot, collection, pipeline, num_results=5):
+    result, cool_emojis = "", []
+    aggregation = list(bot.db[collection].aggregate(pipeline))
+    for i in range(min(len(aggregation), num_results)):
+        item = aggregation[i]
+        result += "{} {} ({})\n".format(rank_list[i], item["_id"], item["count"])
+    return result

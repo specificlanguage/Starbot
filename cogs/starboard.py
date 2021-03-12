@@ -37,6 +37,7 @@ class Starboard(commands.Cog, name="Starboard"):
         if ctx.invoked_subcommand is None:
             await ctx.send("Incorrect subcommand! Try !help starboard for more info.")
 
+
     """ create -
         When command is run, given name, reaction, and threshold,
         creates a new starboard in the channel that the command is run.
@@ -55,8 +56,9 @@ class Starboard(commands.Cog, name="Starboard"):
 
         checks = {"name_too_long": len("starbot." + coll_name) >= 100,
                   "name_too_short": len(name) < 0,
+                  "is_username": name[0] == "@",
                   "channel_being_used": channel in [i["channel"] for i in starboards],
-                  "too_many": len(starboards) >= 2,
+                  "too_many": len(starboards) >= helpers.get_board_limit(),
                   "name_used": name in [i["name"] for i in starboards],
                   "reaction_used": reaction in ([i["reaction"] for i in starboards] +
                                                 [i["antistar"] for i in starboards]),
@@ -125,6 +127,7 @@ class Starboard(commands.Cog, name="Starboard"):
                 if val:
                     await ctx.send(helpers.get_error_message(key))
                     return
+
             self.bot.db.channels.find_one_and_update(search, {"$set":{"antistar": value}})
             await ctx.send("Starboard '" + name + "' antistar changed to " + value)
             return
@@ -162,21 +165,37 @@ class Starboard(commands.Cog, name="Starboard"):
             embed.add_field(name=ch_name, value=result)
         await ctx.send(embed=embed)
 
-    @commands.command(name="stars", help="Finds highest starred messages from all starboards, and links them. \n"
-                                         "Mention a user to get their highest posts.")
-    async def leaderboard(self, ctx):
-        if not ctx.message.raw_mentions:
-            embed = await messages.send_leaderboard(self.bot, ctx)
+    @commands.command(name="leaderboard", help="Usage: {}")
+    async def leaderboard(self, ctx, board_name=None):
+
+        if board_name:
+            db_search = helpers.get_db_board_name(ctx.guild.id, board_name)
+            if not self.bot.db.channels.find_one({"name": db_search}):
+                board_name = None
+                # if there's not actually a board name that exists, it's probably just a mention.
+
+        if not board_name and len(ctx.message.raw_mentions) == 0: #general case
+            embed = await messages.all_leaderboards(self.bot, ctx)
+            embed.set_footer(text="For more info on a board, put the board before your name!")
             await ctx.send(embed=embed)
             return
-        user = self.bot.get_user(ctx.raw_mentions[0])
-        embed = await messages.send_user_leaderboard(self.bot, user, guild_id=ctx.guild.id)
-        await ctx.send(embed=embed)
-
-    """
-    update_starboard
-    Given a reacted message and a board name, checks and sends a message to the respective star channel.
-    """
+        elif len(ctx.message.raw_mentions) == 0: # board_name specified
+            embed = discord.Embed(title="Top Posts in {}".format(board_name), colour=discord.Colour.blue())
+            await messages.send_leaderboard(self.bot, ctx, helpers.get_db_board_name(ctx.guild.id, board_name), embed)
+            await ctx.send(embed=embed)
+            return
+        elif not board_name: # username specified
+            user = self.bot.get_user(ctx.message.raw_mentions[0])
+            embed = await messages.all_user_leaderboards(self.bot, ctx, user)
+            embed.set_footer(text="For more info on a board, put the board name on an argument!")
+            await ctx.send(embed=embed)
+        else: # both board_name and username specified
+            user = self.bot.get_user(ctx.message.raw_mentions[0])
+            embed = discord.Embed(title="Top Posts in {}".format(board_name), colour=discord.Colour.blue())
+            await messages.send_user_leaderboard(self.bot, ctx, user,
+                                                 helpers.get_db_board_name(ctx.guild.id, board_name), embed)
+            await ctx.send(embed=embed)
+            return
 
     def clear_antistars(self, board_name):
         self.bot.db.stars.delete_many(filter={"board_name": board_name, "antistar": True})

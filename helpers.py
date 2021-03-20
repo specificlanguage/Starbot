@@ -52,6 +52,10 @@ def get_db_board_name(guild_id, board_name):
 def get_raw_board_name(board_name):
     return board_name.split("-")[0]
 
+def check_message_permissions(ctx):
+    if ctx.message.author.guild_permissions.manage_messages:
+        return True
+    return False
 """ 
 validate_reaction() does all the work to validate reactions and check for several things:
 - Did the author react?
@@ -62,7 +66,6 @@ Upon success, it will return a list with two objects:
 - Index 0 will return the board name to check and update
 - Index 1 will return the dictionary request, which also contains all other required objects.
 """
-
 
 async def validate_reaction(bot, payload):
     channel = bot.get_channel(payload.channel_id)

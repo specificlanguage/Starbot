@@ -44,27 +44,29 @@ class Starboard(commands.Cog, name="Starboard"):
     """
     @starboard.command(help="!starboard create [board name] [reaction] {threshold}\n")
     async def create(self, ctx, name: str, reaction: str, threshold: str):
-
         if not threshold.isnumeric():
             ctx.send("Threshold must be a number.")
             return
 
         # set up variables
-        guild, channel, threshold = ctx.guild.id, ctx.channel.id, int(threshold)
+        guild, channel = ctx.guild.id, ctx.channel.id
         coll_name = helpers.get_db_board_name(guild_id=guild, board_name=name)
         starboards = list(self.bot.db.channels.find({"guild": guild}))
 
-        checks = {"name_too_long": len("starbot." + coll_name) >= 100,
-                  "name_too_short": len(name) < 0,
-                  "is_username": name[0] == "@",
-                  "channel_being_used": channel in [i["channel"] for i in starboards],
-                  "too_many": len(starboards) >= helpers.get_board_limit(),
-                  "name_used": name in [i["name"] for i in starboards],
-                  "reaction_used": reaction in ([i["reaction"] for i in starboards] +
-                                                [i["antistar"] for i in starboards]),
-                  "is_not_emoji": not helpers.is_emoji(self.bot, reaction),
-                  "threshold_low": threshold <= 0,
-                  "threshold_high": threshold >= 1000000}
+        checks = {
+            "invalid_permissions": helpers.check_message_permissions(ctx),
+            "threshold_not_numeric": threshold.isnumeric(),
+            "name_too_long": len("starbot." + coll_name) >= 100,
+            "name_too_short": len(name) < 0,
+            "is_username": name[0] == "@",
+            "channel_being_used": channel in [i["channel"] for i in starboards],
+            "too_many": len(starboards) >= helpers.get_board_limit(),
+            "name_used": name in [i["name"] for i in starboards],
+            "reaction_used": reaction in ([i["reaction"] for i in starboards] + [i["antistar"] for i in starboards]),
+            "is_not_emoji": not helpers.is_emoji(self.bot, reaction),
+            "threshold_low": int(threshold) <= 0,
+            "threshold_high": int(threshold) >= 1000000
+        }
 
         for key, value in checks.items():
             if value:
@@ -72,10 +74,10 @@ class Starboard(commands.Cog, name="Starboard"):
                 return
 
         new_channel = {'name': coll_name, 'guild': guild, 'channel': channel,
-                       'reaction': reaction, 'threshold': threshold, 'antistar': ""}
+                       'reaction': reaction, 'threshold': int(threshold), 'antistar': ""}
         self.bot.db.channels.insert_one(new_channel)
         await ctx.send("Starboard '" + name + "' created in this channel, with " + reaction +
-                       " as reaction and threshold " + str(threshold))
+                       " as reaction and threshold " + threshold)
 
     # modify - Subcommand for starboards to modify settings
     """ modify - 
@@ -85,6 +87,9 @@ class Starboard(commands.Cog, name="Starboard"):
         or `!starboard modify antistar clear` to clear """
     @starboard.command(help="!starboard modify [board name] [antistar/threshold] [reaction/value]")
     async def modify(self, ctx, name: str, option: str, value: str):
+        if not helpers.check_message_permissions(ctx):
+            await ctx.send(helpers.get_error_message("invalid_permissions"))
+            return
         board_name = helpers.get_db_board_name(ctx.guild.id, name)
         search = {"guild": ctx.guild.id, "name": board_name}
         valid_options = ["threshold", "antistar"]
@@ -138,6 +143,8 @@ class Starboard(commands.Cog, name="Starboard"):
 
     @starboard.command(help="- Removes starboard  -  !starboard remove [board name]", aliases=["delete"])
     async def remove(self, ctx, name: str):
+        if not helpers.check_message_permissions(ctx):
+            await ctx.send(helpers.get_error_message("invalid_permissions"))
         board_name = helpers.get_db_board_name(ctx.guild.id, name)
         search = {"guild": ctx.guild.id, "name": board_name}
         board = self.bot.db.channels.find_one(search)
